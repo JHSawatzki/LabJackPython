@@ -784,7 +784,7 @@ class U6(Device):
         return watchdogStatus
 
     SPIModes = { 'A' : 0, 'B' : 1, 'C' : 2, 'D' : 3 }
-    def spi(self, SPIBytes, AutoCS=True, DisableDirConfig = False, SPIMode = 'A', SPIClockFactor = 0, CSPINNum = 0, CLKPinNum = 1, MISOPinNum = 2, MOSIPinNum = 3):
+    def spi(self, SPIBytes, AutoCS = True, DisableDirConfig = False, SPIMode = 'A', SPIClockFactor = 0, CSPINNum = 0, CLKPinNum = 1, MISOPinNum = 2, MOSIPinNum = 3):
         """
         Name: U6.spi(SPIBytes, AutoCS=True, DisableDirConfig = False,
                      SPIMode = 'A', SPIClockFactor = 0, CSPINNum = 0,
@@ -1187,7 +1187,7 @@ class U6(Device):
             self.calInfo.proAinNegSlope = [self.calInfo.proAin10vNegSlope, self.calInfo.proAin1vNegSlope, self.calInfo.proAin100mvNegSlope, self.calInfo.proAin10mvNegSlope]
             self.calInfo.proAinCenter = [self.calInfo.proAin10vCenter, self.calInfo.proAin1vCenter, self.calInfo.proAin100mvCenter, self.calInfo.proAin10mvCenter]
 
-    def binaryToCalibratedAnalogVoltage(self, gainIndex, bytesVoltage, is16Bits=False, resolutionIndex=0):
+    def binaryToCalibratedAnalogVoltage(self, gainIndex, bytesVoltage, is16Bits = False, resolutionIndex = 0):
         """
         Name: U6.binaryToCalibratedAnalogVoltage(gainIndex, bytesVoltage, 
                                                  is16Bits = False, resolutionIndex = 0)
@@ -1202,7 +1202,11 @@ class U6(Device):
             bits = float(bytesVoltage)/256
         else:
             bits = float(bytesVoltage)
-
+        
+        if self.calInfo.nominal:
+            # Read the actual calibration constants if we haven't already.
+            self.getCalibrationData()
+        
         if self.deviceName.endswith("Pro") and (resolutionIndex > 8 or resolutionIndex == 0):
             #Use hi-res calibration constants
             center = self.calInfo.proAinCenter[gainIndex]
@@ -1213,20 +1217,21 @@ class U6(Device):
             center = self.calInfo.ainCenter[gainIndex]
             negSlope = self.calInfo.ainNegSlope[gainIndex]
             posSlope = self.calInfo.ainSlope[gainIndex]
-
+        
         if bits < center:
             return (center - bits) * negSlope
         else:
             return (bits - center) * posSlope
 
-    def binaryToCalibratedAnalogTemperature(self, bytesTemperature, is16Bits=False):
+    def binaryToCalibratedAnalogTemperature(self, bytesTemperature, is16Bits = False, resolutionIndex = 0):
         """
         Name: U6.binaryToCalibratedAnalogTemperature(bytesTemperature, is16Bits = False)
         Args: bytesTemperature, bytes returned from the U6
               is16Bits, set to True if bytesTemperature is 16 bits (not 24)
         Desc: Converts binary temperature to Kelvin.
         """
-        voltage = self.binaryToCalibratedAnalogVoltage(0, bytesTemperature, is16Bits, 1)
+        voltage = self.binaryToCalibratedAnalogVoltage(0, bytesTemperature, is16Bits, resolutionIndex)
+        
         return self.calInfo.temperatureSlope * float(voltage) + self.calInfo.temperatureOffset
 
     def voltageToDACBits(self, volts, dacNumber = 0, is16Bits = False):
@@ -1353,7 +1358,7 @@ class U6(Device):
         """
         return self.getFeedback(BitStateRead(ioNum))[0]
 
-    def getTemperature(self):
+    def getTemperature(self, resolutionIndex = 0):
         """
         Name: U6.getTemperature()
         Args: none
@@ -1363,14 +1368,11 @@ class U6(Device):
         >>> myU6.getTemperature()
         299.87723471224308
         """
-        if self.calInfo.nominal:
-            # Read the actual calibration constants if we haven't already.
-            self.getCalibrationData()
+        result = self.getFeedback(AIN24AR(14, resolutionIndex))
         
-        result = self.getFeedback(AIN24AR(14))
-        return self.binaryToCalibratedAnalogTemperature(result[0]['AIN'])
+        return self.binaryToCalibratedAnalogTemperature(result[0]['AIN'], resolutionIndex = resolutionIndex)
 
-    def getAIN(self, positiveChannel, resolutionIndex=0, gainIndex=0, settlingFactor=0, differential=False):
+    def getAIN(self, positiveChannel, resolutionIndex = 0, gainIndex = 0, settlingFactor = 0, differential = False):
         """
         Name: U6.getAIN(positiveChannel, resolutionIndex = 0, gainIndex = 0,
                         settlingFactor = 0, differential = False)
@@ -1651,7 +1653,7 @@ class AIN(FeedbackCommand):
         
         self.positiveChannel = PositiveChannel
         self.cmdBytes = [ 0x01, PositiveChannel, 0 ]
-
+    
     readLen =  2
     
     def __repr__(self):
