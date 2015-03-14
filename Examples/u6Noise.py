@@ -5,9 +5,10 @@ Desc: An example program that will calculate the values that can be found in
       Appendix B of the U6 User's Guide.
 """
 
-import u6 # Import the u6 class
 import math # Need math for square root and log.
 from datetime import datetime
+
+import u6 # Import the u6 module
 
 # The size of the various ranges
 ranges = [20, 2, 0.2, 0.02]
@@ -31,7 +32,7 @@ def calcNoiseAndResolution(d, resolutionIndex, voltageRange):
     start = datetime.now()
     
     # Collect 128 samples
-    for i in xrange(128):
+    for i in range(128):
         readings.append(d.getFeedback(cmd)[0]['AIN'])
     
     finish = datetime.now()

@@ -9,10 +9,29 @@ To learn about the low-level functions, please see Section 5.2 of the UE9 User's
 
 http://labjack.com/support/ue9/users-guide/5.2 
 """
-from LabJackPython import *
+import collections
+import datetime
+import select
+import socket
+import struct
 
-import struct, socket, select, ConfigParser
-from datetime import datetime
+try:
+  import ConfigParser
+except ImportError: # Python 3
+  import configparser as ConfigParser
+
+from LabJackPython import (
+    Device,
+    deviceCount,
+    LabJackException,
+    LJ_tcSYS,
+    LowlevelErrorException,
+    lowlevelErrorToString,
+    setChecksum8,
+    toDouble,
+    UE9TCPHandle,
+    verifyChecksum,
+    )
 
 def openAllUE9():
     """
@@ -126,44 +145,44 @@ class UE9(Device):
         #command[5] = Checksum16 (MSB)
         #command[6] = Writemask. Set it along the way.
         #command[7] = Reserved
-        if LocalID != None:
+        if LocalID is not None:
             command[6] |= 1
             command[8] = LocalID
         
-        if IPAddress != None:
+        if IPAddress is not None:
             command[6] |= (1 << 2)
             ipbytes = IPAddress.split('.')
             ipbytes = [ int(x) for x in ipbytes ]
             ipbytes.reverse()
             command[10:14] = ipbytes
         
-        if Gateway != None:
+        if Gateway is not None:
             command[6] |= (1 << 3)
             gwbytes = Gateway.split('.')
             gwbytes = [ int(x) for x in gwbytes ]
             gwbytes.reverse()
             command[14:18] = gwbytes
         
-        if Subnet != None:
+        if Subnet is not None:
             command[6] |= (1 << 4)
             snbytes = Subnet.split('.')
             snbytes = [ int(x) for x in snbytes ]
             snbytes.reverse()
             command[18:21] = snbytes
             
-        if PortA != None:
+        if PortA is not None:
             command[6] |= (1 << 5)
             t = struct.pack("<H", PortA)
             command[22] = ord(t[0])
             command[23] = ord(t[1])
         
-        if PortB != None:
+        if PortB is not None:
             command[6] |= (1 << 5)
             t = struct.pack("<H", PortB)
             command[24] = ord(t[0])
             command[25] = ord(t[1])
 
-        if DHCPEnabled != None:
+        if DHCPEnabled is not None:
             command[6] |= (1 << 6)
             if DHCPEnabled:
                 command[26] = 1
@@ -188,7 +207,7 @@ class UE9(Device):
         self.portB = struct.unpack("<H", struct.pack("BB", *result[24:26]))[0]
         self.DHCPEnabled = bool(result[26])
         self.productId = result[27]
-        macBytes = result[28:34]
+
         self.macAddress = "%02X:%02X:%02X:%02X:%02X:%02X" % (result[33], result[32], result[31], result[30], result[29], result[28])
         
         self.serialNumber = struct.unpack("<I", struct.pack("BBBB", result[28], result[29], result[30], 0x10))[0]
@@ -301,7 +320,7 @@ class UE9(Device):
         ips = [IP0, IP1, IP2, IP3, IP4]
         startbyte = 8
         for ip in ips:
-            if ip != None:
+            if ip is not None:
                 ipbytes = ip.split('.')
                 ipbytes = [ int(x) for x in ipbytes ]
                 ipbytes.reverse()
@@ -381,63 +400,63 @@ class UE9(Device):
         #command[5] = Checksum16 (MSB)
         #command[6] = Writemask. Set it along the way.
         
-        if PowerLevel != None:
+        if PowerLevel is not None:
             command[6] |= 1
             command[7] = PowerLevel
         
-        if FIODir != None:
+        if FIODir is not None:
             command[6] |= (1 << 1)
             command[8] = FIODir
         
-        if FIOState != None:
+        if FIOState is not None:
             command[6] |= (1 << 1)
             command[9] = FIOState
         
-        if EIODir != None:
+        if EIODir is not None:
             command[6] |= (1 << 1)
             command[10] = EIODir
         
-        if EIOState != None:
+        if EIOState is not None:
             command[6] |= (1 << 1)
             command[11] = EIOState
         
-        if CIODirection != None:
+        if CIODirection is not None:
             command[6] |= (1 << 1)
             command[12] = ( CIODirection & 0xf) << 4
         
-        if CIOState != None:
+        if CIOState is not None:
             command[6] |= (1 << 1)
             command[12] |= ( CIOState & 0xf )
         
-        if DoNotLoadDigitalIODefaults != None:
+        if DoNotLoadDigitalIODefaults is not None:
             command[6] |= (1 << 1)
             if DoNotLoadDigitalIODefaults:
                 command[13] |= (1 << 7)
         
-        if MIODirection != None:
+        if MIODirection is not None:
             command[6] |= (1 << 1)
             command[13] |= ( MIODirection & 7 ) << 4
         
-        if MIOState != None:
+        if MIOState is not None:
             command[6] |= (1 << 1)
             command[13] |= ( MIOState & 7 )
         
-        if DAC0Enable != None:
+        if DAC0Enable is not None:
             command[6] |= (1 << 2)
             if DAC0Enable:
                 command[15] = (1 << 7)
         
-        if DAC0 != None:
+        if DAC0 is not None:
             command[6] |= (1 << 2)
             command[14] = DAC0 & 0xff
             command[15] |= (DAC0 >> 8 ) & 0xf
         
-        if DAC1Enable != None:
+        if DAC1Enable is not None:
             command[6] |= (1 << 2)
             if DAC1Enable:
                 command[17] = (1 << 7)
         
-        if DAC1 != None:
+        if DAC1 is not None:
             command[6] |= (1 << 2)
             command[16] = DAC1 & 0xff
             command[17] |= (DAC1 >> 8 ) & 0xf
@@ -576,7 +595,7 @@ class UE9(Device):
             pass
         elif IOType == 1:
             #Digital Bit Write
-            if Dir == None or State == None:
+            if (Dir is None) or (State is None):
                 raise LabJackException("Need to specify a direction and state")
             command[4] = Dir
             command[5] = State
@@ -585,20 +604,20 @@ class UE9(Device):
             pass
         elif IOType == 3:
             #Digital Port Write
-            if Dir == None or State == None:
+            if (Dir is None) or (State is None):
                 raise LabJackException("Need to specify a direction and state")
             command[4] = Dir
             command[5] = State
         elif IOType == 4:
             #Analog In
-            if BipGain == None or Resolution == None or SettlingTime == None:
+            if (BipGain is None) or (Resolution is None) or (SettlingTime is None):
                 raise LabJackException("Need to specify a BipGain, Resolution, and SettlingTime")
             command[4] = BipGain
             command[5] = Resolution
             command[6] = SettlingTime
         elif IOType == 5:
             #Analog Out
-            if DAC == None:
+            if DAC is None:
                 raise LabJackException("Need to specify a DAC Value")
             command[4] = DAC & 0xff
             command[5] = (DAC >> 8) & 0xf
@@ -704,38 +723,38 @@ class UE9(Device):
         # Configure timers and counters if we are updating the configuration
         if UpdateConfig:
             if NumTimersEnabled >= 1:
-                if Timer0Mode == None: raise LabJackException("Need to specify a mode for Timer0")
-                if Timer0Value == None: raise LabJackException("Need to specify a value for Timer0")
+                if Timer0Mode is None: raise LabJackException("Need to specify a mode for Timer0")
+                if Timer0Value is None: raise LabJackException("Need to specify a value for Timer0")
                 command[10] = Timer0Mode
                 command[11] = Timer0Value & 0xff
                 command[12] = (Timer0Value >> 8) & 0xff
             if NumTimersEnabled >= 2:
-                if Timer1Mode == None: raise LabJackException("Need to specify a mode for Timer1")
-                if Timer1Value == None: raise LabJackException("Need to specify a value for Timer1")
+                if Timer1Mode is None: raise LabJackException("Need to specify a mode for Timer1")
+                if Timer1Value is None: raise LabJackException("Need to specify a value for Timer1")
                 command[13] = Timer1Mode
                 command[14] = Timer1Value & 0xff
                 command[15] = (Timer1Value >> 8) & 0xff
             if NumTimersEnabled >= 3:
-                if Timer2Mode == None: raise LabJackException("Need to specify a mode for Timer2")
-                if Timer2Value == None: raise LabJackException("Need to specify a value for Timer2")
+                if Timer2Mode is None: raise LabJackException("Need to specify a mode for Timer2")
+                if Timer2Value is None: raise LabJackException("Need to specify a value for Timer2")
                 command[16] = Timer2Mode
                 command[17] = Timer2Value & 0xff
                 command[18] = (Timer2Value >> 8) & 0xff
             if NumTimersEnabled >= 4:
-                if Timer3Mode == None: raise LabJackException("Need to specify a mode for Timer3")
-                if Timer3Value == None: raise LabJackException("Need to specify a value for Timer3")
+                if Timer3Mode is None: raise LabJackException("Need to specify a mode for Timer3")
+                if Timer3Value is None: raise LabJackException("Need to specify a value for Timer3")
                 command[19] = Timer3Mode
                 command[20] = Timer3Value & 0xff
                 command[21] = (Timer3Value >> 8) & 0xff
             if NumTimersEnabled >= 5:
-                if Timer4Mode == None: raise LabJackException("Need to specify a mode for Timer4")
-                if Timer4Value == None: raise LabJackException("Need to specify a value for Timer4")
+                if Timer4Mode is None: raise LabJackException("Need to specify a mode for Timer4")
+                if Timer4Value is None: raise LabJackException("Need to specify a value for Timer4")
                 command[22] = Timer4Mode
                 command[23] = Timer4Value & 0xff
                 command[24] = (Timer4Value >> 8) & 0xff
             if NumTimersEnabled == 6:
-                if Timer5Mode == None: raise LabJackException("Need to specify a mode for Timer5")
-                if Timer5Value == None: raise LabJackException("Need to specify a value for Timer5")
+                if Timer5Mode is None: raise LabJackException("Need to specify a mode for Timer5")
+                if Timer5Value is None: raise LabJackException("Need to specify a value for Timer5")
                 command[25] = Timer5Mode
                 command[26] = Timer5Value & 0xff
                 command[27] = (Timer5Value >> 8) & 0xff
@@ -747,13 +766,13 @@ class UE9(Device):
 
         # Parse the results
         returnValue = {}
-        for i in range(0,6):
+        for i in range(6):
             returnValue["Timer" + str(i) + "Enabled"] = result[7] >> i & 1 == 1
-        for i in range(0,2):
+        for i in range(2):
             returnValue["Counter" + str(i) + "Enabled"] = result[7] >> i + 6 & 1 == 1
-        for i in range(0, 6):
+        for i in range(6):
             returnValue["Timer" + str(i)] = unpackInt(result[8+i*4:12+i*4])
-        for i in range(0,2):
+        for i in range(2):
             counterValue = [0]
             counterValue.extend(result[32+i*4:35+i*4])
             returnValue["Counter" + str(i)] = unpackInt(counterValue)
@@ -863,7 +882,7 @@ class UE9(Device):
         Note: Use before and/or after streaming.  Timeout delay can occur occur.
         """
         try:
-            for i in range(0, 10):
+            for i in range(10):
                 res = self.read(192, stream = True)
                 if len(res) == 192:
                     if all([ ord(b) == 0 for b in res ]):
@@ -931,8 +950,8 @@ class UE9(Device):
         if len(ChannelNumbers) != len(ChannelOptions):
             raise LabJackException("len(ChannelNumbers) doesn't match len(ChannelOptions)")
 
-        if ScanFrequency != None or SampleFrequency != None:
-            if ScanFrequency == None:
+        if (ScanFrequency is not None) or (SampleFrequency is not None):
+            if ScanFrequency is None:
                 ScanFrequency = SampleFrequency/NumChannels
             
             if ScanFrequency >= 11.5:
@@ -1077,7 +1096,7 @@ class UE9(Device):
         while True:
             if self.ethernet and newTimeLoop == True:
                 newTimeLoop = False
-                startTime = datetime.now()
+                startTime = datetime.datetime.now()
             
             result = self.read(numBytes * self.packetsPerRequest, stream = True)
             numPackets = len(result) // numBytes
@@ -1120,7 +1139,7 @@ class UE9(Device):
                     #Adjust buffered data
                     resultBuffer = resultBuffer[(numBytes * self.packetsPerRequest):]
                 else:
-                    curTime = datetime.now()
+                    curTime = datetime.datetime.now()
                     timeElapsed = (curTime-startTime).seconds + float((curTime-startTime).microseconds)/1000000
                     if timeElapsed > 1.10:
                         newTimeLoop = True
@@ -1131,7 +1150,7 @@ class UE9(Device):
                         else:
                             #Return packets in multiples of 4 like over USB
                             numPackets = (packetsInBuffer // 4) * 4
-                            result = retResult[:(numBytes * numPackets)]
+                            result = resultBuffer[:(numBytes * numPackets)]
                             firstPacket = ord(result[10])
                             
                             #Adjust buffered data
@@ -1371,11 +1390,11 @@ class UE9(Device):
         
         returnDict = {}
         
-        if ( ( result[7] >> 7 ) & 1 ):
+        if (result[7] >> 7) & 1:
             returnDict['Update'] = True
         else:
             returnDict['Update'] = False
-        if ( ( result[7] >> 6 ) & 1):
+        if (result[7] >> 6) & 1:
             returnDict['UARTEnable'] = True
         else:
             returnDict['UARTEnable'] = False
@@ -1500,7 +1519,7 @@ class UE9(Device):
         command[7] = SpeedAdjust
         command[8] = SDAPinNum
         command[9] = SCLPinNum
-        if AddressByte != None:
+        if AddressByte is not None:
             command[10] = AddressByte
         else:
             command[10] = Address << 1
@@ -1649,8 +1668,6 @@ class UE9(Device):
         """
         # Insure that we know if we are dealing with a Pro or not.
         self.controlConfig()
-        
-        results = dict()
         
         ainslopes = { '0' : None, '1' : None, '2' : None, '3' : None, '8' : None }
         ainoffsets = { '0' : None, '1' : None, '2' : None, '3' : None, '8' : None }

@@ -16,8 +16,25 @@ Section Number Mapping:
 4 = Private Helper Functions
 
 """
-from LabJackPython import *
-import struct, ConfigParser
+import collections
+import struct
+import sys
+
+try:
+    import ConfigParser
+except ImportError: # Python 3
+    import configparser as ConfigParser
+
+from LabJackPython import (
+    Device,
+    deviceCount,
+    LabJackException,
+    LowlevelErrorException,
+    lowlevelErrorToString,
+    MAX_USB_PACKET_LENGTH,
+    setChecksum8,
+    toDouble,
+    )
 
 FIO0, FIO1, FIO2, FIO3, FIO4, FIO5, FIO6, FIO7, \
 EIO0, EIO1, EIO2, EIO3, EIO4, EIO5, EIO6, EIO7, \
@@ -116,7 +133,7 @@ class U3(Device):
         Device.open(self, 3, firstFound = firstFound, serial = serial, localId = localId, devNumber = devNumber, handleOnly = handleOnly, LJSocket = LJSocket )
     open.section = 1
     
-    def configU3(self, LocalID = None, TimerCounterConfig = None, FIOAnalog = None, FIODirection = None, FIOState = None, EIOAnalog = None, EIODirection = None, EIOState = None, CIODirection = None, CIOState = None, DAC1Enable = None, DAC0 = None, DAC1 = None, TimerClockConfig = None, TimerClockDivisor = None, CompatibilityOptions = None ):
+    def configU3(self, LocalID = None, TimerCounterConfig = None, FIOAnalog = None, FIODirection = None, FIOState = None, EIOAnalog = None, EIODirection = None, EIOState = None, CIODirection = None, CIOState = None, DAC1Enable = None, DAC0 = None, DAC1 = None, TimerClockConfig = None, TimerClockDivisor = None, CompatibilityOptions = None):
         """
         Name: U3.configU3(LocalID = None, TimerCounterConfig = None, FIOAnalog = None, FIODirection = None, FIOState = None, EIOAnalog = None, EIODirection = None, EIOState = None, CIODirection = None, CIOState = None, DAC1Enable = None, DAC0 = None, DAC1 = None, TimerClockConfig = None, TimerClockDivisor = None, CompatibilityOptions = None)
         
@@ -725,7 +742,7 @@ class U3(Device):
         sendBuffer, readLen = self._buildBuffer(sendBuffer, readLen, commandlist)
         if len(sendBuffer) % 2:
             sendBuffer += [0]
-        sendBuffer[2] = len(sendBuffer) / 2 - 3
+        sendBuffer[2] = len(sendBuffer) // 2 - 3
         
         if readLen % 2:
             readLen += 1
@@ -745,7 +762,7 @@ class U3(Device):
         
             if rcvBuffer[3] != 0x00:
                 raise LabJackException("Got incorrect command bytes")
-        except LowlevelErrorException, e:
+        except LowlevelErrorException:
             if isinstance(commandlist[0], list):
                 culprit = commandlist[0][ (rcvBuffer[7] -1) ]
             else:
@@ -978,17 +995,17 @@ class U3(Device):
         if len(PChannels) != len(NChannels):
             raise LabJackException("Length of PChannels didn't match the length of NChannels")
         
-        if ScanFrequency != None or SampleFrequency != None:
-            if ScanFrequency == None:
+        if (ScanFrequency is not None) or (SampleFrequency is not None):
+            if ScanFrequency is None:
                 ScanFrequency = SampleFrequency
             if ScanFrequency < 1000:
                 if ScanFrequency < 25:
                     SamplesPerPacket = ScanFrequency
                 DivideClockBy256 = True
-                ScanInterval = 15625/ScanFrequency
+                ScanInterval = 15625//ScanFrequency
             else:
                 DivideClockBy256 = False
-                ScanInterval = 4000000/ScanFrequency
+                ScanInterval = 4000000//ScanFrequency
         
         # Force Scan Interval into correct range
         ScanInterval = min( ScanInterval, 65535 )
@@ -1164,19 +1181,19 @@ class U3(Device):
         else:
             watchdogStatus['WatchDogEnabled'] = True
             
-            if (( result[7] >> 5 ) & 1):
+            if (result[7] >> 5) & 1:
                 watchdogStatus['ResetOnTimeout'] = True
             else:
                 watchdogStatus['ResetOnTimeout'] = False
                 
-            if (( result[7] >> 4 ) & 1):
+            if (result[7] >> 4) & 1:
                 watchdogStatus['SetDIOStateOnTimeout'] = True
             else:
                 watchdogStatus['SetDIOStateOnTimeout'] = False
         
         watchdogStatus['TimeoutPeriod'] = struct.unpack('<H', struct.pack("BB", *result[8:10]))
         
-        if (( result[10] >> 7 ) & 1):
+        if (result[10] >> 7) & 1:
             watchdogStatus['DIOState'] = 1
         else:
             watchdogStatus['DIOState'] = 0 
@@ -1186,7 +1203,6 @@ class U3(Device):
         return watchdogStatus
     watchdog.section = 2
 
-    SPIModes = { 'A' : 0, 'B' : 1, 'C' : 2, 'D' : 3 }
     def spi(self, SPIBytes, AutoCS=True, DisableDirConfig = False, SPIMode = 'A', SPIClockFactor = 0, CSPINNum = 4, CLKPinNum = 5, MISOPinNum = 6, MOSIPinNum = 7):
         """
         Name: U3.spi(SPIBytes, AutoCS=True, DisableDirConfig = False,
@@ -1218,7 +1234,7 @@ class U3(Device):
         
         #command[0] = Checksum8
         command[1] = 0xF8
-        command[2] = 4 + (numSPIBytes/2)
+        command[2] = 4 + (numSPIBytes//2)
         command[3] = 0x3A
         #command[4] = Checksum16 (LSB)
         #command[5] = Checksum16 (MSB)
@@ -1228,7 +1244,12 @@ class U3(Device):
         if DisableDirConfig:
             command[6] |= (1 << 6)
         
-        command[6] |= ( self.SPIModes[SPIMode] & 3 )
+        spiModes = ('A', 'B', 'C', 'D')
+        try:
+            modeIndex = spiModes.index(SPIMode)
+        except ValueError:
+            raise LabJackException("Invalid SPIMode %r, valid modes are: %r" % (SPIMode, spiModes))
+        command[6] |= modeIndex
         
         command[7] = SPIClockFactor
         #command[8] = Reserved
@@ -1251,7 +1272,7 @@ class U3(Device):
 
     spi.section = 2
 
-    def asynchConfig(self, Update = True, UARTEnable = True, DesiredBaud  = 9600, olderHardware = False, configurePins = True ):
+    def asynchConfig(self, Update = True, UARTEnable = True, DesiredBaud = 9600, olderHardware = False, configurePins = True):
         """
         Name: U3.asynchConfig(Update = True, UARTEnable = True, 
                               DesiredBaud = 9600, olderHardware = False,
@@ -1292,9 +1313,9 @@ class U3(Device):
         
         #command[8] = Reserved
         if olderHardware:
-            command[9] = (2**8) - self.timerClockBase/DesiredBaud
+            command[9] = (2**8) - self.timerClockBase//DesiredBaud
         else:
-            BaudFactor = (2**16) - 48000000/(2 * DesiredBaud)
+            BaudFactor = (2**16) - 48000000//(2 * DesiredBaud)
             t = struct.pack("<H", BaudFactor)
             command[8] = ord(t[0])
             command[9] = ord(t[1])
@@ -1306,12 +1327,12 @@ class U3(Device):
         
         returnDict = {}
         
-        if ( ( result[7] >> 7 ) & 1 ):
+        if (result[7] >> 7) & 1:
             returnDict['Update'] = True
         else:
             returnDict['Update'] = False
         
-        if ( ( result[7] >> 6 ) & 1):
+        if (result[7] >> 6) & 1:
             returnDict['UARTEnable'] = True
         else:
             returnDict['UARTEnable'] = False
@@ -1357,7 +1378,7 @@ class U3(Device):
         
         #command[0] = Checksum8
         command[1] = 0xF8
-        command[2] = 1 + ( numBytes/2 )
+        command[2] = 1 + ( numBytes//2 )
         command[3] = 0x15
         #command[4] = Checksum16 (LSB)
         #command[5] = Checksum16 (MSB)
@@ -1444,7 +1465,7 @@ class U3(Device):
         
         #command[0] = Checksum8
         command[1] = 0xF8
-        command[2] = 4 + (numBytes/2)
+        command[2] = 4 + (numBytes//2)
         command[3] = 0x3B
         #command[4] = Checksum16 (LSB)
         #command[5] = Checksum16 (MSB)
@@ -1458,7 +1479,7 @@ class U3(Device):
         command[7] = SpeedAdjust
         command[8] = SDAPinNum
         command[9] = SCLPinNum
-        if AddressByte != None:
+        if AddressByte is not None:
             command[10] = AddressByte
         else:
             command[10] = Address << 1
@@ -1597,7 +1618,7 @@ class U3(Device):
                 else:
                     return (bits * 0.000074463) * (0.000314 / 0.000037231) + -10.3
             else:
-                raise Exception, "Can't do differential on high voltage channels"
+                raise Exception("Can't do differential on high voltage channels")
     binaryToCalibratedAnalogVoltage.section = 3
     
     def binaryToCalibratedAnalogTemperature(self, bytesTemperature):
@@ -1681,7 +1702,8 @@ class U3(Device):
             self.calData['hvAIN1Offset'] = toDouble(calData[8:16])
             self.calData['hvAIN2Offset'] = toDouble(calData[16:24])
             self.calData['hvAIN3Offset'] = toDouble(calData[24:32])
-        except LowlevelErrorException, ex:
+        except LowlevelErrorException:
+            ex = sys.exc_info()[1]
             if ex.errorCode != 26:
                 #not an invalid block error, so do not disregard
                 raise ex
@@ -1973,7 +1995,7 @@ class AIN(FeedbackCommand):
         self.longSettling = LongSettling
         self.quickSample = QuickSample
         
-        validChannels = range(16) + [30, 31]
+        validChannels = list(range(16)) + [30, 31]
         if PositiveChannel not in validChannels:
             raise Exception("Invalid Positive Channel specified")
         if NegativeChannel not in validChannels:
@@ -2442,7 +2464,7 @@ class Timer(FeedbackCommand):
         self.mode = Mode
         if timer != 0 and timer != 1:
             raise LabJackException("Timer should be either 0 or 1.")
-        if UpdateReset and Value == None:
+        if UpdateReset and (Value is None):
             raise LabJackException("UpdateReset set but no value.")
             
         
