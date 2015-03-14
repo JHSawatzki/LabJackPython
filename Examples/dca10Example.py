@@ -5,10 +5,14 @@ http://labjack.com/support/dca-10/datasheet
 
 See the dca10.py for more information on the DCA10 class.
 """
-import dca10
-from time import sleep
-from time import time
+from time import sleep, time
 
+try:
+    raw_input
+except NameError: # Python 3
+    raw_input = input
+
+import dca10
 
 r = raw_input("Do you have an encoder to connect to the LabJack? [y/N] ")
 

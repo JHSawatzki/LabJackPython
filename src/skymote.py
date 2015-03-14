@@ -1,11 +1,19 @@
 """
-Name: bridge.py
+Name: skymote.py
 Desc: Provides a Bridge and Mote class for working with SkyMote bridges and 
       motes.
 """
-from LabJackPython import *
+import socket
+import struct
+import sys
 
-if os.name == "nt":
+from LabJackPython import (
+    Device,
+    LabJackException,
+    skymoteLib,
+    )
+
+if sys.platform.startswith("win32") or sys.platform.startswith("cygwin"):
     if skymoteLib is None:
         raise ImportError("Couldn't load liblabjackusb.dll. Please install, and try again.")
         
@@ -31,8 +39,8 @@ class Bridge(Device):
     """
     Bridge class for working with wireless bridges
     
-    >>> import bridge
-    >>> d = bridge.Bridge()
+    >>> import skymote
+    >>> d = skymote.Bridge()
     """
     # ------------------ Object Functions ------------------
     # These functions are part of object interaction in python
@@ -142,7 +150,7 @@ class Bridge(Device):
         results = self.readRegister(50120, numReg = 8, format = ">"+"B"*16)
         
         returnDict = dict()
-        returnDict['enabled'] = True if results[0] != 0 else False
+        returnDict['enabled'] = results[0] != 0
         returnDict['password'] = struct.pack("B"*15, *results[1:])
         
         return returnDict
@@ -405,7 +413,7 @@ class Mote(object):
         results = self.readRegister(50120, numReg = 8, format = ">"+"B"*16)
         
         returnDict = dict()
-        returnDict['enabled'] = True if results[0] != 0 else False
+        returnDict['enabled'] = results[0] != 0
         returnDict['password'] = struct.pack("B"*15, *results[1:])
         
         return returnDict
@@ -425,7 +433,4 @@ class Mote(object):
             byteList = [ 0 ] + byteList
             
         byteList = list(struct.unpack(">"+"H" * 8, struct.pack("B"*16, *byteList)))
-        
-        print "Writing:", byteList
-        
         self.writeRegister(50120, byteList)

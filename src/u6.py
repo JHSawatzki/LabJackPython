@@ -10,9 +10,25 @@ Guide:
 
 http://labjack.com/support/u6/users-guide/5.2
 """
-from LabJackPython import *
+import collections
+import struct
+import sys
 
-import struct, ConfigParser
+try:
+    import ConfigParser
+except ImportError: # Python 3
+    import configparser as ConfigParser
+
+from LabJackPython import (
+    Device,
+    deviceCount,
+    LabJackException,
+    LowlevelErrorException,
+    lowlevelErrorToString,
+    MAX_USB_PACKET_LENGTH,
+    setChecksum8,
+    toDouble,
+    )
 
 def openAllU6():
     """
@@ -237,7 +253,7 @@ class U6(Device):
         #command[4]  = Checksum16 (LSB)
         #command[5]  = Checksum16 (MSB)
         
-        if LocalID != None:
+        if LocalID is not None:
             command[6] = (1 << 3)
             command[8] = LocalID
             
@@ -246,7 +262,8 @@ class U6(Device):
         #command[9-25] = Reserved 
         try:
             result = self._writeRead(command, 38, [0xF8, 0x10, 0x08])
-        except LabJackException, e:
+        except LabJackException:
+            e = sys.exc_info()[1]
             if e.errorCode is 4:
                 print "NOTE: ConfigU6 returned an error of 4. This probably means you are using U6 with a *really old* firmware. Please upgrade your U6's firmware as soon as possible."
                 result = self._writeRead(command, 38, [0xF8, 0x10, 0x08], checkBytes = False)
@@ -295,23 +312,23 @@ class U6(Device):
         #command[4]  = Checksum16 (LSB)
         #command[5]  = Checksum16 (MSB)
         
-        if NumberTimersEnabled != None:
+        if NumberTimersEnabled is not None:
             command[6] = 1
             command[7] = NumberTimersEnabled
         
-        if EnableCounter0 != None:
+        if EnableCounter0 is not None:
             command[6] = 1
             
             if EnableCounter0:
                 command[8] = 1
         
-        if EnableCounter1 != None:
+        if EnableCounter1 is not None:
             command[6] = 1
             
             if EnableCounter1:
                 command[8] |= (1 << 1)
         
-        if TimerCounterPinOffset != None:
+        if TimerCounterPinOffset is not None:
             command[6] = 1
             command[9] = TimerCounterPinOffset
             
@@ -331,7 +348,7 @@ class U6(Device):
               TimerClockDivisor, set the divisor
               
               if all args are None, command just reads.
-              Also, if you cannot set the divisor without setting the base.
+              Also, you cannot set the divisor without setting the base.
               
         Desc: Writes and read the timer clock configuration.
         
@@ -350,11 +367,11 @@ class U6(Device):
         #command[6]  = Reserved
         #command[7]  = Reserved
         
-        if TimerClockBase != None:
+        if TimerClockBase is not None:
             command[8] = (1 << 7)
             command[8] |= TimerClockBase & 7
         
-        if TimerClockDivisor != None:
+        if TimerClockDivisor is not None:
             command[9] = TimerClockDivisor
             
         result = self._writeRead(command, 10, [0xF8, 0x2, 0x0A])
@@ -411,7 +428,7 @@ class U6(Device):
 
         if len(sendBuffer) % 2:
             sendBuffer += [0]
-        sendBuffer[2] = len(sendBuffer) / 2 - 3
+        sendBuffer[2] = len(sendBuffer) // 2 - 3
         
         if readLen % 2:
             readLen += 1
@@ -430,7 +447,7 @@ class U6(Device):
         
             if rcvBuffer[3] != 0x00:
                 raise LabJackException("Got incorrect command bytes")
-        except LowlevelErrorException, e:
+        except LowlevelErrorException:
             if isinstance(commandlist[0], list):
                 culprit = commandlist[0][ (rcvBuffer[7] -1) ]
             else:
@@ -604,8 +621,8 @@ class U6(Device):
         if len(ChannelNumbers) != len(ChannelOptions):
             raise LabJackException("len(ChannelNumbers) doesn't match len(ChannelOptions)")
         
-        if ScanFrequency != None or SampleFrequency != None:
-            if ScanFrequency == None:
+        if (ScanFrequency is not None) or (SampleFrequency is not None):
+            if ScanFrequency is None:
                 ScanFrequency = SampleFrequency
             if ScanFrequency < 1000:
                 if ScanFrequency < 25:
@@ -765,19 +782,19 @@ class U6(Device):
         else:
             watchdogStatus['WatchDogEnabled'] = True
             
-            if (( result[7] >> 5 ) & 1):
+            if (result[7] >> 5) & 1:
                 watchdogStatus['ResetOnTimeout'] = True
             else:
                 watchdogStatus['ResetOnTimeout'] = False
                 
-            if (( result[7] >> 4 ) & 1):
+            if (result[7] >> 4) & 1:
                 watchdogStatus['SetDIOStateOnTimeout'] = True
             else:
                 watchdogStatus['SetDIOStateOnTimeout'] = False
         
         watchdogStatus['TimeoutPeriod'] = struct.unpack('<H', struct.pack("BB", *result[8:10]))
         
-        if (( result[10] >> 7 ) & 1):
+        if (result[10] >> 7) & 1:
             watchdogStatus['DIOState'] = 1
         else:
             watchdogStatus['DIOState'] = 0 
@@ -786,8 +803,12 @@ class U6(Device):
         
         return watchdogStatus
 
+<<<<<<< HEAD
     SPIModes = { 'A' : 0, 'B' : 1, 'C' : 2, 'D' : 3 }
     def spi(self, SPIBytes, AutoCS = True, DisableDirConfig = False, SPIMode = 'A', SPIClockFactor = 0, CSPINNum = 0, CLKPinNum = 1, MISOPinNum = 2, MOSIPinNum = 3):
+=======
+    def spi(self, SPIBytes, AutoCS=True, DisableDirConfig = False, SPIMode = 'A', SPIClockFactor = 0, CSPINNum = 0, CLKPinNum = 1, MISOPinNum = 2, MOSIPinNum = 3):
+>>>>>>> 3df2c806030ce73644f1faaa48963bc4ff52a889
         """
         Name: U6.spi(SPIBytes, AutoCS=True, DisableDirConfig = False,
                      SPIMode = 'A', SPIClockFactor = 0, CSPINNum = 0,
@@ -834,7 +855,12 @@ class U6(Device):
         if DisableDirConfig:
             command[6] |= (1 << 6)
         
-        command[6] |= ( self.SPIModes[SPIMode] & 3 )
+        spiModes = ('A', 'B', 'C', 'D')
+        try:
+            modeIndex = spiModes.index(SPIMode)
+        except ValueError:
+            raise LabJackException("Invalid SPIMode %r, valid modes are: %r" % (SPIMode, spiModes))
+        command[6] |= modeIndex
         
         command[7] = SPIClockFactor
         #command[8] = Reserved
@@ -886,7 +912,7 @@ class U6(Device):
         if UARTEnable:
             command[7] |= (1 << 6)
         
-        if DesiredBaud != None:
+        if DesiredBaud is not None:
             BaudFactor = (2**16) - 48000000/(2 * DesiredBaud)   
         
         t = struct.pack("<H", BaudFactor)
@@ -992,7 +1018,7 @@ class U6(Device):
         command[8] = SDAPinNum
         command[9] = SCLPinNum
         
-        if AddressByte != None:
+        if AddressByte is not None:
             command[10] = AddressByte
         else:
             command[10] = Address << 1
@@ -1011,7 +1037,10 @@ class U6(Device):
         result = self._writeRead(command, (12+NumI2CBytesToReceive), [0xF8, (3+(NumI2CBytesToReceive/2)), 0x3B])
         
         if NumI2CBytesToReceive != 0:
-            return { 'AckArray' : result[8:12], 'I2CBytes' : result[12:] }
+            if oddResponse:
+                return { 'AckArray' : result[8:12], 'I2CBytes' : result[12:-1] }
+            else:
+                return { 'AckArray' : result[8:12], 'I2CBytes' : result[12:] }
         else:
             return { 'AckArray' : result[8:12] }
             
@@ -1633,7 +1662,8 @@ class FeedbackCommand(object):
     def handle(self, input):
         return None
 
-validChannels = range(144)
+_validChannels = frozenset(range(144))
+
 class AIN(FeedbackCommand):
     '''
     Analog Input Feedback command
@@ -1651,7 +1681,7 @@ class AIN(FeedbackCommand):
     [ 19238 ]
     '''
     def __init__(self, PositiveChannel):
-        if PositiveChannel not in validChannels:
+        if PositiveChannel not in _validChannels:
             raise LabJackException("Invalid Positive Channel specified")
         
         self.positiveChannel = PositiveChannel
@@ -1695,7 +1725,7 @@ class AIN24(FeedbackCommand):
     [ 193847 ]
     '''
     def __init__(self, PositiveChannel, ResolutionIndex = 0, GainIndex = 0, SettlingFactor = 0, Differential = False):
-        if PositiveChannel not in validChannels:
+        if PositiveChannel not in _validChannels:
             raise LabJackException("Invalid Positive Channel specified")
 
         self.positiveChannel = PositiveChannel
@@ -1752,7 +1782,7 @@ class AIN24AR(FeedbackCommand):
     { 'AIN' : 193847, 'ResolutionIndex' : 0, 'GainIndex' : 0, 'Status' : 0 }
     '''
     def __init__(self, PositiveChannel, ResolutionIndex = 0, GainIndex = 0, SettlingFactor = 0, Differential = False):
-        if PositiveChannel not in validChannels:
+        if PositiveChannel not in _validChannels:
             raise LabJackException("Invalid Positive Channel specified")
 
         self.positiveChannel = PositiveChannel
@@ -2132,7 +2162,7 @@ class Timer(FeedbackCommand):
     def __init__(self, timer, UpdateReset = False, Value=0, Mode = None):
         if timer not in range(4):
             raise LabJackException("Timer should be 0-3.")
-        if UpdateReset and Value == None:
+        if UpdateReset and (Value is None):
             raise LabJackException("UpdateReset set but no value.")
         
         self.timer = timer

@@ -2,12 +2,12 @@
 Name: EI1050
 Desc: A few simple classes to handle communication with the EI1050 probe
 """
+import sys
 import threading
 import time
-import sys
+
 import u3
 import u6
-import ue9
 
 class EI1050:
     """
@@ -147,8 +147,9 @@ class EI1050:
         Desc: Get a reading and create a Reading object with the information
         """
         if self.autoUpdate: self.update()
-        if self.curState.has_key('StatusCRC'): return Reading(self.curState['StatusReg'], self.curState['StatusCRC'], self.curState['Temperature'], self.curState['TemperatureCRC'], self.curState['Humidity'], self.curState['HumidityCRC'])
+        if 'StatusCRC' in self.curState: return Reading(self.curState['StatusReg'], self.curState['StatusCRC'], self.curState['Temperature'], self.curState['TemperatureCRC'], self.curState['Humidity'], self.curState['HumidityCRC'])
         else: return Reading(self.curState['StatusReg'], 0, self.curState['Temperature'], self.curState['TemperatureCRC'], self.curState['Humidity'], self.curState['HumidityCRC'])
+
     def update(self):
         """
         Name: EI1050.update()

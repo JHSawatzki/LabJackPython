@@ -23,15 +23,14 @@ Desc: Defines the U12 class, which makes working with a U12 much easier. The
       
 """
 
-import platform
+import atexit
 import ctypes
-import os, atexit
 import math
-from time import time
 import struct
+import sys
+import time
 
-WINDOWS = "Windows"
-ON_WINDOWS = (os.name == 'nt')
+_os_name = "" #Set to "nt" or "posix" in _loadLibrary
 
 class U12Exception(Exception):
     """Custom Exception meant for dealing specifically with U12 Exceptions.
@@ -188,7 +187,7 @@ class BitField(object):
         self.labelPrefix = labelPrefix
         
         if labelList is None:
-            self.labelList = range(8)
+            self.labelList = list(range(8))
         else:
             self.labelList = list(reversed(labelList))
         
@@ -320,7 +319,7 @@ class BitField(object):
         FIO1 Output
         FIO0 Input
         """
-        return zip(self.labels, self.data)
+        return list(zip(self.labels, self.data))
     
     def __int__(self):
         return self.asByte()
@@ -347,7 +346,7 @@ def errcheck(ret, func, args):
 def _loadLinuxSo():
     try:
         l = ctypes.CDLL("liblabjackusb.so", use_errno=True)
-    except TypeError:
+    except TypeError: # Python 2.5
         l = ctypes.CDLL("liblabjackusb.so")
     l.LJUSB_Stream.errcheck = errcheck
     l.LJUSB_Read.errcheck = errcheck
@@ -356,34 +355,59 @@ def _loadLinuxSo():
 def _loadMacDylib():
     try:
         l = ctypes.CDLL("liblabjackusb.dylib", use_errno=True)
-    except TypeError:
+    except TypeError: # Python 2.5
         l = ctypes.CDLL("liblabjackusb.dylib")
     l.LJUSB_Stream.errcheck = errcheck
     l.LJUSB_Read.errcheck = errcheck
     return l
 
-staticLib = None
-if os.name == 'posix':
-        try:
-            staticLib = _loadLinuxSo()
-        except OSError, e:
-            pass # We may be on Mac.
-        except Exception, e:
-            raise U12Exception("Could not load the Linux SO for some reason other than it not being installed. Ethernet connectivity only.\n\n    The error was: %s" % e)
-        
-        try:
-            if staticLib is None:
-                staticLib = _loadMacDylib()
-        except OSError, e:
-            raise U12Exception("Could not load the Exodriver driver. Ethernet connectivity only.\n\nCheck that the Exodriver is installed, and the permissions are set correctly.\nThe error message was: %s" % e)
-        except Exception, e:
-            raise U12Exception("Could not load the Mac Dylib for some reason other than it not being installed. Ethernet connectivity only.\n\n    The error was: %s" % e)   
-else:
+def _loadLibrary():
+    """_loadLibrary()
+    Returns a ctypes dll pointer to the library.
+    """
+    global _os_name
+
+    _os_name = "nt"
     try:
-        staticLib = ctypes.windll.LoadLibrary("ljackuw")
-    except:
-        raise Exception, "Could not load LabJack UW driver."
+        if sys.platform.startswith("win32"):
+            #Windows detected
+            return ctypes.WinDLL("ljackuw")
+        if sys.platform.startswith("cygwin"):
+            #Cygwin detected. WinDLL not available, but CDLL seems to work.
+            return ctypes.CDLL("ljackuw")
+    except Exception:
+        e = sys.exc_info()[1]
+        raise U12Exception("Could not load LabJack UW driver.\n\n    The error was: %s" % e)
+
+    _os_name = "posix"
+    addStr = "Exodriver"
+    try:
+        if sys.platform.startswith("linux"):
+            #Linux detected
+            addStr = "Linux SO"
+            return _loadLinuxSo()
+        if sys.platform.startswith("darwin"):
+            #Mac detected
+            addStr = "Mac Dylib"
+            return _loadMacDylib()
+        #Other OS? Just try to load the Exodriver like a Linux SO
+        addStr = "Other SO"
+        return _loadLinuxSo()
+    except OSError:
+        e = sys.exc_info()[1]
+        raise U12Exception("Could not load the Exodriver driver.\n\nCheck that the Exodriver is installed, and the permissions are set correctly.\nThe error message was: %s" % e)
+    except Exception:
+        e = sys.exc_info()[1]
+        raise U12Exception("Could not load the %s for some reason other than it not being installed.\n\n    The error was: %s" % (addStr, e))
+   
+try:
+    staticLib = _loadLibrary()
+except U12Exception:
+    e = sys.exc_info()[1]
+    print "%s: %s" % ( type(e), e )
+    staticLib = None
     
+
 class U12(object):
     """
     U12 Class for all U12 specific commands.
@@ -400,7 +424,7 @@ class U12(object):
         self.debug = debug
         self._autoCloseSetup = False
         
-        if not ON_WINDOWS:
+        if _os_name != "nt":
             # Save some variables to save state.
             self.pwmAVoltage = 0
             self.pwmBVoltage = 0
@@ -416,7 +440,7 @@ class U12(object):
         a handle. On Windows, this method does nothing. On Mac OS X and Linux,
         this method acquires a device handle and saves it to the U12 object.
         """
-        if ON_WINDOWS:
+        if _os_name == "nt":
             pass
         else:
             if self.debug: print "open called"
@@ -498,14 +522,14 @@ class U12(object):
                 self._autoCloseSetup = True
     
     def close(self):
-        if ON_WINDOWS:
+        if _os_name == "nt":
             pass
         else:
             staticLib.LJUSB_CloseDevice(self.handle)
             self.handle = None
 
     def write(self, writeBuffer):
-        if ON_WINDOWS:
+        if _os_name == "nt":
             pass
         else:
             if self.handle is None:
@@ -518,13 +542,13 @@ class U12(object):
             
             writeBytes = staticLib.LJUSB_Write(self.handle, ctypes.byref(newA), len(writeBuffer))
             
-            if(writeBytes != len(writeBuffer)):
+            if writeBytes != len(writeBuffer):
                 raise U12Exception( "Could only write %s of %s bytes." % (writeBytes, len(writeBuffer) ) )
                 
             return writeBuffer
             
     def read(self, numBytes = 8):
-        if ON_WINDOWS:
+        if _os_name == "nt":
             pass
         else:
             if self.handle is None:
@@ -683,7 +707,7 @@ class U12(object):
         returnDict = {}
         returnDict['EchoValue'] = results[1]
         returnDict['PGAOvervoltage'] = bool(bf.bit4)
-        returnDict['IO3toIO0States'] = BitField(results[0], "IO", range(3, -1, -1), "Low", "High")
+        returnDict['IO3toIO0States'] = BitField(results[0], "IO", list(range(3, -1, -1)), "Low", "High")
         
         channel0 = (results[2] >> 4) & 0xf
         channel1 = (results[2] & 0xf)
@@ -810,16 +834,16 @@ class U12(object):
         if results[0] != 87:
             raise U12Exception("Expected a DIO response, got %s instead." % results[0])
         
-        returnDict['D15toD8States'] = BitField(results[1], "D", range(15, 7, -1), "Low", "High")
-        returnDict['D7toD0States'] = BitField(results[2], "D", range(7, -1, -1), "Low", "High")
+        returnDict['D15toD8States'] = BitField(results[1], "D", list(range(15, 7, -1)), "Low", "High")
+        returnDict['D7toD0States'] = BitField(results[2], "D", list(range(7, -1, -1)), "Low", "High")
         
-        returnDict['D15toD8Directions'] = BitField(results[4], "D", range(15, 7, -1), "Output", "Input")
-        returnDict['D7toD0Directions'] = BitField(results[5], "D", range(7, -1, -1), "Output", "Input")
+        returnDict['D15toD8Directions'] = BitField(results[4], "D", list(range(15, 7, -1)), "Output", "Input")
+        returnDict['D7toD0Directions'] = BitField(results[5], "D", list(range(7, -1, -1)), "Output", "Input")
         
-        returnDict['D15toD8OutputLatchStates'] = BitField(results[6], "D", range(15, 7, -1))
-        returnDict['D7toD0OutputLatchStates'] = BitField(results[7], "D", range(7, -1, -1))
+        returnDict['D15toD8OutputLatchStates'] = BitField(results[6], "D", list(range(15, 7, -1)))
+        returnDict['D7toD0OutputLatchStates'] = BitField(results[7], "D", list(range(7, -1, -1)))
         
-        returnDict['IO3toIO0States'] = BitField((results[3] >> 4), "IO", range(3, -1, -1), "Low", "High")
+        returnDict['IO3toIO0States'] = BitField((results[3] >> 4), "IO", list(range(3, -1, -1)), "Low", "High")
         
         return returnDict
     
@@ -883,9 +907,9 @@ class U12(object):
         if results[0] != command[5]:
             raise U12Exception("Expected a Counter response, got %s instead." % results[0])
         
-        returnDict['D15toD8States'] = BitField(results[1], "D", range(15, 7, -1), "Low", "High")
-        returnDict['D7toD0States'] = BitField(results[2], "D", range(7, -1, -1), "Low", "High")
-        returnDict['IO3toIO0States'] = BitField((results[3] >> 4), "IO", range(3, -1, -1), "Low", "High")
+        returnDict['D15toD8States'] = BitField(results[1], "D", list(range(15, 7, -1)), "Low", "High")
+        returnDict['D7toD0States'] = BitField(results[2], "D", list(range(7, -1, -1)), "Low", "High")
+        returnDict['IO3toIO0States'] = BitField((results[3] >> 4), "IO", list(range(3, -1, -1)), "Low", "High")
         
         counter = results[7]
         counter += results[6] << 8
@@ -992,9 +1016,9 @@ class U12(object):
         
         returnDict = {}
         
-        returnDict['D15toD8States'] = BitField(results[1], "D", range(15, 7, -1), "Low", "High")
-        returnDict['D7toD0States'] = BitField(results[2], "D", range(7, -1, -1), "Low", "High")
-        returnDict['IO3toIO0States'] = BitField((results[3] >> 4), "IO", range(3, -1, -1), "Low", "High")
+        returnDict['D15toD8States'] = BitField(results[1], "D", list(range(15, 7, -1)), "Low", "High")
+        returnDict['D7toD0States'] = BitField(results[2], "D", list(range(7, -1, -1)), "Low", "High")
+        returnDict['IO3toIO0States'] = BitField((results[3] >> 4), "IO", list(range(3, -1, -1)), "Low", "High")
         
         counter = results[7]
         counter += results[6] << 8
@@ -1177,7 +1201,7 @@ class U12(object):
             
             returnDict['BufferOverflowOrChecksumErrors'].append(bool(bf.bit5))
             returnDict['PGAOvervoltages'].append(bool(bf.bit4))
-            returnDict['IO3toIO0States'].append(BitField(results[0], "IO", range(3, -1, -1), "Low", "High"))
+            returnDict['IO3toIO0States'].append(BitField(results[0], "IO", list(range(3, -1, -1)), "Low", "High"))
             
             returnDict['IterationCounters'].append((results[1] >> 5))
             returnDict['Backlogs'].append(results[1] & 0xf)
@@ -1215,28 +1239,9 @@ class U12(object):
         # Bits 6-4: PGA for 1st Channel
         # Bits 3-0: MUX command for 1st Channel
         command[0] = int(channel0PGAMUX)
-        
-        tempNum = command[0] & 7 # 7 = 0b111
-        channel0Number = tempNum if (command[0] & 0xf) > 7 else tempNum+8
-        channel0Gain = (command[0] >> 4) & 7 # 7 = 0b111
-        
         command[1] = int(channel1PGAMUX)
-        
-        tempNum = command[1] & 7 # 7 = 0b111
-        channel1Number = tempNum if (command[1] & 0xf) > 7 else tempNum+8
-        channel1Gain = (command[1] >> 4) & 7 # 7 = 0b111
-        
         command[2] = int(channel2PGAMUX)
-        
-        tempNum = command[2] & 7 # 7 = 0b111
-        channel2Number = tempNum if (command[2] & 0xf) > 7 else tempNum+8
-        channel2Gain = (command[2] >> 4) & 7 # 7 = 0b111
-        
         command[3] = int(channel3PGAMUX)
-        
-        tempNum = command[3] & 7 # 7 = 0b111
-        channel3Number = tempNum if (command[3] & 0xf) > 7 else tempNum+8
-        channel3Gain = (command[3] >> 4) & 7 # 7 = 0b111
         
         bf = BitField()
         bf.bit7 = int(bool(FeatureReports))
@@ -1676,7 +1681,6 @@ class U12(object):
         
         return returnDict
         
-    SPIModes = ['A', 'B', 'C', 'D']
     def rawSPI(self, Data, AddMsDelay = False, AddHundredUsDelay = False, SPIMode = 'A', NumberOfBytesToWriteRead = 0, ControlCS = False, StateOfActiveCS = False, CSLineNumber = 0):
         """
         Name: U12.rawSPI( Data, AddMsDelay = False, AddHundredUsDelay = False,
@@ -1735,7 +1739,11 @@ class U12(object):
         bf.bit7 = int(bool(AddMsDelay))
         bf.bit6 = int(bool(AddHundredUsDelay))
         
-        modeIndex = self.SPIModes.index(SPIMode)
+        spiModes = ('A', 'B', 'C', 'D')
+        try:
+            modeIndex = spiModes.index(SPIMode)
+        except ValueError:
+            raise U12Exception("Invalid SPIMode %r, valid modes are: %r" % (SPIMode, spiModes))
         bf[7-modeIndex] = 1
         
         command[4] = int(bf)
@@ -1911,7 +1919,7 @@ class U12(object):
         if idNum is None:
             idNum = self.id
         
-        if ON_WINDOWS:
+        if _os_name == "nt":
             ljid = ctypes.c_long(idNum)
             ad0 = ctypes.c_long(999)
             ad1 = ctypes.c_float(999)
@@ -1945,7 +1953,7 @@ class U12(object):
         if idNum is None:
             idNum = self.id
         
-        if ON_WINDOWS:
+        if _os_name == "nt":
             ljid = ctypes.c_long(idNum)
             ecode = staticLib.EAnalogOut(ctypes.byref(ljid), demo, ctypes.c_float(analogOut0), ctypes.c_float(analogOut1))
     
@@ -1982,7 +1990,7 @@ class U12(object):
         if idNum is None:
             idNum = self.id
         
-        if ON_WINDOWS:
+        if _os_name == "nt":
             ljid = ctypes.c_long(idNum)
             count = ctypes.c_double()
             ms = ctypes.c_double()
@@ -1995,7 +2003,7 @@ class U12(object):
         else:
             results = self.rawCounter( ResetCounter = resetCounter)
             
-            return {"idnum":self.id, "count":results['Counter'], "ms": (time() * 1000)}
+            return {"idnum":self.id, "count":results['Counter'], "ms": (time.time() * 1000)}
             
 
     def eDigitalIn(self, channel, idNum = None, demo = 0, readD=0):
@@ -2016,7 +2024,7 @@ class U12(object):
         if idNum is None:
             idNum = self.id
         
-        if ON_WINDOWS:
+        if _os_name == "nt":
             ljid = ctypes.c_long(idNum)
             state = ctypes.c_long(999)
             
@@ -2068,7 +2076,7 @@ class U12(object):
         if idNum is None:
             idNum = self.id
         
-        if ON_WINDOWS:
+        if _os_name == "nt":
             ljid = ctypes.c_long(idNum)
             
             ecode = staticLib.EDigitalOut(ctypes.byref(ljid), demo, channel, writeD, state)
@@ -2133,7 +2141,6 @@ class U12(object):
         channelsArray = listToCArray(channels, ctypes.c_long)
         gainsArray = listToCArray(gains, ctypes.c_long)
         overVoltage = ctypes.c_long(999)
-        longArrayType = (ctypes.c_long * 4)
         floatArrayType = (ctypes.c_float * 4)
         voltages = floatArrayType(0, 0, 0, 0)
         stateIOin = ctypes.c_long(stateIOin)
@@ -2168,7 +2175,6 @@ class U12(object):
         channelsArray = listToCArray(channels, ctypes.c_long)
         gainsArray = listToCArray(gains, ctypes.c_long)
         scanRate = ctypes.c_float(scanRate)
-        pointerArray = (ctypes.c_void_p * 4)
         arr4096_type = ctypes.c_float * 4096 
         voltages_type = arr4096_type * 4 
         voltages = voltages_type() 
@@ -2361,9 +2367,8 @@ class U12(object):
         
         # Make data 18 elements large
         dataArray = [0] * 18
-        for i in range(0, len(data)):
+        for i in range(len(data)):
             dataArray[i] = data[i]
-        print dataArray
         dataArray = listToCArray(dataArray, ctypes.c_long)
         
         ecode = staticLib.Asynch(ctypes.byref(idNum), demo, portB, enableTE, enableTO, enableDel, baudrate, numWrite, numRead, ctypes.byref(dataArray))
@@ -2383,7 +2388,7 @@ class U12(object):
         >>> dev.bitsToVolts(0, 0, 2662)
         >>> {'volts': 2.998046875}
         """
-        if ON_WINDOWS:
+        if _os_name == "nt":
             volts = ctypes.c_float()
             ecode = staticLib.BitsToVolts(chnum, chgain, bits, ctypes.byref(volts))
     
@@ -2407,7 +2412,7 @@ class U12(object):
         >>> dev.voltsToBits(0, 0, 3)
         >>> {'bits': 2662}
         """
-        if ON_WINDOWS:
+        if _os_name == "nt":
             bits = ctypes.c_long(999)
             ecode = staticLib.VoltsToBits(chnum, chgain, ctypes.c_float(volts), ctypes.byref(bits))
 
@@ -2439,7 +2444,6 @@ class U12(object):
         stateIO = ctypes.c_long(999)
         count = ctypes.c_ulong(999)
         
-        print idNum
         ecode = staticLib.Counter(ctypes.byref(idNum), demo, ctypes.byref(stateD), ctypes.byref(stateIO), resetCounter, enableSTB, ctypes.byref(count))
 
         if ecode != 0: raise U12Exception(ecode)
@@ -2749,7 +2753,7 @@ class U12(object):
         >>> dev.resetLJ()
         >>> {'idnum': 1}
         """
-        return reset(idNum)
+        return self.reset(idNum)
     
     def sht1X(self, idNum=None, demo=0, softComm=0, mode=0, statusReg=0):
         """
@@ -2827,7 +2831,7 @@ class U12(object):
         
         # Make sure data is 18 elements
         cData = [0] * 18
-        for i in range(0, len(data)):
+        for i in range(len(data)):
             cData[i] = data[i]
         cData = listToCArray(cData, ctypes.c_long)
         
@@ -2853,7 +2857,7 @@ class U12(object):
         idNum = ctypes.c_long(idNum)
         
         if len(activeDn) is not 3: raise ValueError("activeDn must have 3 elements")
-        if len(stateDn) is not 3: raise Value("stateDn must have 3 elements")
+        if len(stateDn) is not 3: raise ValueError("stateDn must have 3 elements")
         
         ecode = staticLib.Watchdog(ctypes.byref(idNum), demo, active, timeout, reset, activeDn[0], activeDn[1], activeDn[2], stateDn[0], stateDn[1], stateDn[2])
         if ecode != 0: raise U12Exception(ecode)
@@ -2872,7 +2876,7 @@ class U12(object):
         """
         
         if address is None:
-            raise Exception, "Must give an Address."
+            raise Exception("Must give an Address.")
         
         if idnum is None:
             idnum = self.id
@@ -2905,9 +2909,9 @@ class U12(object):
         >>> 1
         """
         if address is None or data is None:
-            raise Exception, "Must give both an Address and data."
+            raise Exception("Must give both an Address and data.")
         if type(data) is not list or len(data) != 4:
-            raise Exception, "Data must be a list and have a length of 4"
+            raise Exception("Data must be a list and have a length of 4")
         
         if idnum is None:
             idnum = self.id
@@ -2921,8 +2925,6 @@ class U12(object):
     def LJHash(self, hashStr, size):
         outBuff = (ctypes.c_char * 16)()
         retBuff = ''
-        
-        staticLib = ctypes.windll.LoadLibrary("ljackuw")
         
         ec = staticLib.LJHash(ctypes.cast(hashStr, ctypes.POINTER(ctypes.c_char)),
                               size, 
@@ -2945,7 +2947,7 @@ def isIterable(var):
 def listToCArray(list, dataType):
     arrayType = dataType * len(list)
     array = arrayType()
-    for i in range(0,len(list)):
+    for i in range(len(list)):
         array[i] = list[i]
     
     return array
@@ -2979,4 +2981,4 @@ def hexWithoutQuotes(l):
     [0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9]
 
     """
-    return str([hex (i) for i in l]).replace("'", "")
+    return str([hex(i) for i in l]).replace("'", "")

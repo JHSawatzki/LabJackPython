@@ -228,3 +228,25 @@ Version History
     - Fixed the U3 writeCal method.
     - Updated the device open error checks on Windows. Warnings no longer raise
       an exception.
+- Next Release
+    - LabJackPython now refuses to install on unsupported Python versions.
+    - Fixed U12 watchdog method argument parsing.  If the stateDn argument was
+      invalid, it would try to raise Value (undefined) instead of ValueError.
+    - Fixed U12 resetLJ method.  This method was intended to call reset but
+      would always cause a NameError exception due to a typo.
+    - Fixed a stream bug where stopping and restarting the stream did not reset
+      the packet offset internal variable which could cause data processing for
+      incorrect channels.
+    - Changed the operating system detection to use sys.platform instead of
+      os.name.
+    - Fixed getDevCounts, openAllLabJacks, and GetResultSS on Windows.
+    - Added Cygwin support.
+    - Fixed a bug in openLabJack where some error conditions on Windows would
+      try to raise LabjackException (undefined) instead of LabJackException.
+    - Added string descriptions for low-level error codes 112 to 116.
+    - Fixed a bug in U6 where I2C responses with an odd number of bytes would
+      return an extra byte at the end.
+    - Fixed a bug in UE9 streamData where an incorrect variable name was being
+      used.
+    - Fixed a Windows bug in eGetRaw when the x1 parameter has a 64-bit pointer
+      address. The function now uses 32 and 64-bit safe eGetPtr UD function.

@@ -1,3 +1,9 @@
+<<<<<<< HEAD
 *.pyc
 src/build
 build/
+=======
+*.pyc
+src/build
+build/
+>>>>>>> 3df2c806030ce73644f1faaa48963bc4ff52a889
